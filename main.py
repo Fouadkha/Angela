@@ -1,13 +1,11 @@
 import discord
-import datetime
-from datetime import date
-from zoneinfo import ZoneInfo
 from discord.ext import tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pandas as pd
+import pytz
 
-time = datetime.time(hour=8, minute=30)
+tz = pytz.timezone("Europe/Berlin")
 ids = pd.read_csv("ids.csv")
 author_to_emoji = dict(zip(ids['author'], ids['emoji']))
 schedule = pd.read_csv("schedule.csv")
@@ -23,7 +21,7 @@ class Client(discord.Client):
             hour, minute = int(time_parts[0]), int(time_parts[1])
             channel_id = int(row["channel"])
             message = row["message"]
-            scheduler.add_job(send_message,CronTrigger(day_of_week=day, hour=hour, minute=minute),args=[channel_id, message])
+            scheduler.add_job(send_message,CronTrigger(day_of_week=day, hour=hour, minute=minute, timezone=tz),args=[channel_id, message])
         scheduler.start()
     
     async def on_message(self, message):
