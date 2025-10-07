@@ -4,16 +4,38 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pandas as pd
 import pytz
+import random
 
 tz = pytz.timezone("Europe/Berlin")
-ids = pd.read_csv("ids.csv")
-author_to_emoji = dict(zip(ids['author'], ids['emoji']))
+rules = {}
+OWNERS = None
+
+def load_rules(filename="ids.csv"):
+    global rules, OWNERS
+    rules = {}
+    
+    df = pd.read_csv(filename, dtype=str).fillna("")  # read as strings, empty -> ""
+    OWNERS = {int(a) for a in df["author"].head(2) if a.strip()}
+    for _, row in df.iterrows():
+        author_id = int(row["author"])
+        emoji_id = int(row["emoji"])
+        channel = row["channel"].strip()
+
+        if author_id not in rules:
+            rules[author_id] = {"default": None, "channels": {}}
+
+        if channel:  # channel-specific
+            rules[author_id]["channels"][int(channel)] = emoji_id
+        else:  # default
+            rules[author_id]["default"] = emoji_id
+
 schedule = pd.read_csv("schedule.csv")
 
 scheduler = AsyncIOScheduler()
 
 class Client(discord.Client):
     async def on_ready(self):
+        load_rules()
         print(f'Logged on as {self.user}!')
         for _, row in schedule.iterrows():
             day = row["day"]
@@ -25,14 +47,39 @@ class Client(discord.Client):
         scheduler.start()
     
     async def on_message(self, message):
-        if message.author.id in ids["author"].values:
-            reaction = client.get_emoji(author_to_emoji.get(message.author.id))
-            await message.add_reaction(reaction)
+            # --- Handle private messages ---
+        if isinstance(message.channel, discord.DMChannel) and message.author.id in OWNERS:
+            if message.content.startswith("!send "):
+                parts = message.content.split(" ", 2)
+                if len(parts) < 3:
+                    await message.channel.send("⚠️ Usage: `!send <channel_id> <message>`")
+                    return
+                try:
+                    channel_id = int(parts[1])
+                    text = parts[2]
+                    success = await send_message(channel_id, text)
+                except ValueError:
+                    await message.channel.send("⚠️ Invalid channel ID.")
+            return
+        # --- Handle reactions in servers ---
+        author_id = message.author.id
+        channel_id = message.channel.id
+        if author_id in rules:
+        # pick channel-specific or default
+            if channel_id in rules[author_id]["channels"]:
+                emoji_id = rules[author_id]["channels"][channel_id]
+            else:
+                emoji_id = rules[author_id]["default"]
+
+            if emoji_id:
+                emoji = client.get_emoji(emoji_id)  # fetch emoji object
+            await message.add_reaction(emoji)
+
 
 async def send_message(channel_id, message):
-        channel = client.get_channel(channel_id)
-        if channel:
-            await channel.send(message)
+    channel = client.get_channel(channel_id)
+    if channel:
+        await channel.send(message)
 
 
 file = open("key.txt", "r")
