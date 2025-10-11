@@ -9,6 +9,14 @@ import random
 tz = pytz.timezone("Europe/Berlin")
 rules = {}
 OWNERS = None
+channels = {}
+
+def load_channels(filename="channels.csv"):
+    """Load numbered channels into dictionary: nr → channel_id"""
+    global channels
+    df = pd.read_csv(filename, dtype=str)
+    channels = {int(row["nr"]): int(row["id"]) for _, row in df.iterrows()}
+    print(f"✅ Loaded {len(channels)} channels from {filename}")
 
 def load_rules(filename="ids.csv"):
     global rules, OWNERS
@@ -36,6 +44,7 @@ scheduler = AsyncIOScheduler()
 class Client(discord.Client):
     async def on_ready(self):
         load_rules()
+        load_channels()
         print(f'Logged on as {self.user}!')
         for _, row in schedule.iterrows():
             day = row["day"]
@@ -54,12 +63,12 @@ class Client(discord.Client):
                 if len(parts) < 3:
                     await message.channel.send("⚠️ Usage: `!send <channel_id> <message>`")
                     return
-                try:
-                    channel_id = int(parts[1])
-                    text = parts[2]
-                    success = await send_message(channel_id, text)
-                except ValueError:
-                    await message.channel.send("⚠️ Invalid channel ID.")
+                nr = int(parts[1])
+                text = parts[2]
+                if nr in channels:
+                    await send_message(channels[nr], text)
+                else:
+                    await send_message(nr, text)
             return
         # --- Handle reactions in servers ---
         author_id = message.author.id
