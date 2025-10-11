@@ -60,15 +60,13 @@ class Client(discord.Client):
         if isinstance(message.channel, discord.DMChannel) and message.author.id in OWNERS:
             if message.content.startswith("!send "):
                 parts = message.content.split(" ", 2)
-                if len(parts) < 3:
-                    await message.channel.send("⚠️ Usage: `!send <channel_id> <message>`")
-                    return
-                nr = int(parts[1])
-                text = parts[2]
-                if nr in channels:
-                    await send_message(channels[nr], text)
-                else:
-                    await send_message(nr, text)
+                if len(parts) == 3:
+                    nr = int(parts[1])
+                    text = parts[2]
+                    if nr in channels:
+                        await send_message(channels[nr], text)
+                    else:
+                        await send_message(nr, text)
             return
         # --- Handle reactions in servers ---
         author_id = message.author.id
@@ -86,9 +84,11 @@ class Client(discord.Client):
 
 
 async def send_message(channel_id, message):
-    channel = client.get_channel(channel_id)
-    if channel:
+    if channel := client.get_channel(channel_id):
         await channel.send(message)
+    elif user := await client.fetch_user(channel_id):
+        await user.send(message)
+
 
 
 file = open("key.txt", "r")
