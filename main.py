@@ -7,20 +7,27 @@ import pytz
 import random
 
 tz = pytz.timezone("Europe/Berlin")
-rules = {}
+key = None
+reactions = {}
 OWNERS = None
 channels = {}
+scheduler = None
+
+def read_key():
+    global key
+    file = open("key.txt", "r")
+    key = file.read()
+    file.close()
 
 def load_channels(filename="channels.csv"):
-    """Load numbered channels into dictionary: nr → channel_id"""
     global channels
-    df = pd.read_csv(filename, dtype=str)
+    df = pd.read_csv(filename, dtype=str, comment='#')
     channels = {int(row["nr"]): int(row["id"]) for _, row in df.iterrows()}
     print(f"✅ Loaded {len(channels)} channels from {filename}")
 
-def load_rules(filename="ids.csv"):
-    global rules, OWNERS
-    rules = {}
+def load_reactions(filename="reactions.csv"):
+    global reactions, OWNERS
+    reactions = {}
     
     df = pd.read_csv(filename, dtype=str).fillna("")  # read as strings, empty -> ""
     OWNERS = {int(a) for a in df["author"].head(2) if a.strip()}
@@ -29,34 +36,52 @@ def load_rules(filename="ids.csv"):
         emoji_id = int(row["emoji"])
         channel = row["channel"].strip()
 
-        if author_id not in rules:
-            rules[author_id] = {"default": None, "channels": {}}
+        if author_id not in reactions:
+            reactions[author_id] = {"default": None, "channels": {}}
 
         if channel:  # channel-specific
-            rules[author_id]["channels"][int(channel)] = emoji_id
+            reactions[author_id]["channels"][int(channel)] = emoji_id
         else:  # default
-            rules[author_id]["default"] = emoji_id
+            reactions[author_id]["default"] = emoji_id
+    print(f"✅ Loaded {len(reactions)} reactions from {filename}")
 
-schedule = pd.read_csv("schedule.csv")
 
-scheduler = AsyncIOScheduler()
-
-class Client(discord.Client):
-    async def on_ready(self):
-        load_rules()
-        load_channels()
-        print(f'Logged on as {self.user}!')
-        for _, row in schedule.iterrows():
+def load_schedule(filename="schedule.csv"):
+    global scheduler
+    scheduler = AsyncIOScheduler()
+    schedule = pd.read_csv(filename, comment='#')
+    for _, row in schedule.iterrows():
             day = row["day"]
             time_parts = row["time"].split(":")
             hour, minute = int(time_parts[0]), int(time_parts[1])
             channel_id = int(row["channel"])
             message = row["message"]
             scheduler.add_job(send_message,CronTrigger(day_of_week=day, hour=hour, minute=minute, timezone=tz),args=[channel_id, message])
+    print(f"✅ Loaded {len(schedule)} messages from {filename}")
+
+
+class Client(discord.Client):
+    async def on_ready(self):
+        load_reactions()
+        load_channels()
+        load_schedule()
+        print(f'Logged on as {self.user}!')
         scheduler.start()
     
+    async def reload(self):
+        global scheduler
+        scheduler.remove_all_jobs()
+        scheduler.shutdown(wait=False)
+        reactions.clear()
+        OWNERS.clear()
+        channels.clear()
+        load_reactions()
+        load_channels()
+        load_schedule()
+        scheduler.start()
+
     async def on_message(self, message):
-            # --- Handle private messages ---
+        # --- Handle private messages ---
         if isinstance(message.channel, discord.DMChannel) and message.author.id in OWNERS:
             if message.content.startswith("!send "):
                 parts = message.content.split(" ", 2)
@@ -67,16 +92,18 @@ class Client(discord.Client):
                         await send_message(channels[nr], text)
                     else:
                         await send_message(nr, text)
+            elif message.content.startswith("!reload"):
+                await self.reload()
             return
         # --- Handle reactions in servers ---
         author_id = message.author.id
         channel_id = message.channel.id
-        if author_id in rules:
+        if author_id in reactions:
         # pick channel-specific or default
-            if channel_id in rules[author_id]["channels"]:
-                emoji_id = rules[author_id]["channels"][channel_id]
+            if channel_id in reactions[author_id]["channels"]:
+                emoji_id = reactions[author_id]["channels"][channel_id]
             else:
-                emoji_id = rules[author_id]["default"]
+                emoji_id = reactions[author_id]["default"]
 
             if emoji_id:
                 emoji = client.get_emoji(emoji_id)  # fetch emoji object
@@ -91,9 +118,7 @@ async def send_message(channel_id, message):
 
 
 
-file = open("key.txt", "r")
-key = file.read()
-file.close()
+read_key()
 intents = discord.Intents.default()
 intents.message_content = True
 client = Client(intents=intents)
