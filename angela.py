@@ -5,6 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 import pandas as pd
 import pytz
 import random
+import aiohttp
 
 tz = pytz.timezone("Europe/Berlin")
 key = None
@@ -94,7 +95,7 @@ class Client(discord.Client):
                         await send_message(nr, text)
             elif message.content.startswith("!reload"):
                 await self.reload()
-            return
+                
         # --- Handle reactions in servers ---
         author_id = message.author.id
         channel_id = message.channel.id
@@ -108,6 +109,32 @@ class Client(discord.Client):
             if emoji_id:
                 emoji = client.get_emoji(emoji_id)  # fetch emoji object
             await message.add_reaction(emoji)
+        # !cat
+        if message.content.strip().lower().startswith("!cat"):
+            await fetch_cat_gif(message.channel)
+
+
+async def fetch_cat_gif(channel: discord.abc.Messageable):
+    url = "https://api.thecatapi.com/v1/images/search?mime_types=gif"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    await channel.send("⚠️ The Cat API didn’t respond properly.")
+                    return
+
+                data = await resp.json()
+                gif_url = data[0].get("url") if data else None
+
+                if gif_url:
+                    await channel.send(gif_url)
+                else:
+                    await channel.send("😿 Couldn't find a cat gif right now.")
+
+    except aiohttp.ClientError as e:
+        await channel.send(f"⚠️ Network error while fetching cat gif: {e}")
+
+
 
 
 async def send_message(channel_id, message):
