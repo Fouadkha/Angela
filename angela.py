@@ -110,7 +110,7 @@ class Client(discord.Client):
                 emoji = client.get_emoji(emoji_id)  # fetch emoji object
             await message.add_reaction(emoji)
         # !cat
-        if message.content.strip().lower().startswith("!cat"):
+        if message.content.strip().lower().startswith("!cat") or message.content.strip().lower().startswith("!mew"):
             await fetch_cat_gif(message.channel)
 
 
