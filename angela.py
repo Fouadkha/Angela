@@ -110,8 +110,9 @@ class Client(discord.Client):
                 emoji = client.get_emoji(emoji_id)  # fetch emoji object
             await message.add_reaction(emoji)
         # !cat
-        content = message.content.strip().lower()
-        if content.startswith(("!cat", "!mew", "!gatze")):
+        content = message.content.strip()
+        SPECIAL_PREFIXES = tuple("!?$%^&*_+-=~<>/\\")
+        if content.startswith(SPECIAL_PREFIXES):
             await fetch_cat_gif(message.channel)
 
 
